@@ -1,0 +1,57 @@
+name: Create EC2 Instance
+
+on:
+  workflow_dispatch:
+    inputs:
+      port_context:
+        required: true
+        description: 'Port context with blueprint, run ID, etc.'
+        type: string
+
+jobs:
+  create_ec2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Log Start in Port
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(inputs.port_context).runId }}
+          logMessage: "Starting EC2 instance creation."
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Launch EC2 Instance
+        id: create_instance
+        run: |
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-1234567890abcdef0 \  # Replace with actual AMI ID
+            --instance-type ${{ github.event.inputs.instance_type }} \
+            --key-name ${{ github.event.inputs.pem_key_name }} \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${{ github.event.inputs.ec2_name }} }]" \
+            --query 'Instances[0].InstanceId' \
+            --output text)
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_ENV
+
+      - name: Log Success in Port
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(inputs.port_context).runId }}
+          status: 'SUCCESS'
+          logMessage: "EC2 instance created with ID ${{ env.instance_id }}"
